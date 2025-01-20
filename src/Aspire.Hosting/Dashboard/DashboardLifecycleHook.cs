@@ -11,15 +11,16 @@ using Aspire.Dashboard.ConsoleLogs;
 using Aspire.Dashboard.Model;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Dcp;
-using Aspire.Hosting.Devcontainers;
 using Aspire.Hosting.Devcontainers.Codespaces;
 using Aspire.Hosting.Lifecycle;
-using Aspire.Hosting.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
+using Aspire.Hosting.Eventing;
+using Aspire.Hosting.Utils;
 
 namespace Aspire.Hosting.Dashboard;
 
@@ -33,10 +34,8 @@ internal sealed class DashboardLifecycleHook(IConfiguration configuration,
                                              ILoggerFactory loggerFactory,
                                              DcpNameGenerator nameGenerator,
                                              IHostApplicationLifetime hostApplicationLifetime,
-                                             CodespacesUrlRewriter codespaceUrlRewriter,
-                                             IOptions<CodespacesOptions> codespacesOptions,
-                                             IOptions<DevcontainersOptions> devcontainersOptions,
-                                             DevcontainerSettingsWriter settingsWriter
+                                             IDistributedApplicationEventing eventing,
+                                             CodespacesUrlRewriter codespaceUrlRewriter
                                              ) : IDistributedApplicationLifecycleHook, IAsyncDisposable
 {
     private static readonly HashSet<string> s_suppressAutomaticConfigurationCopy = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -145,19 +144,56 @@ internal sealed class DashboardLifecycleHook(IConfiguration configuration,
             dashboardResource.Annotations.Remove(endpointAnnotation);
         }
 
-        if (codespacesOptions.Value.IsCodespace || devcontainersOptions.Value.IsDevcontainer)
+        // Add the dashboard endpoints as non-proxied
+        var options = dashboardOptions.Value;
+
+        // Options should have been validated these should not be null
+
+        Debug.Assert(options.DashboardUrl is not null, "DashboardUrl should not be null");
+        Debug.Assert(options.OtlpGrpcEndpointUrl is not null || options.OtlpHttpEndpointUrl is not null, "OtlpGrpcEndpointUrl and OtlpHttpEndpointUrl should not both be null");
+
+        var dashboardUrls = options.DashboardUrl;
+        var otlpGrpcEndpointUrl = options.OtlpGrpcEndpointUrl;
+        var otlpHttpEndpointUrl = options.OtlpHttpEndpointUrl;
+
+        eventing.Subscribe<ResourceReadyEvent>(dashboardResource, (context, resource) =>
         {
-            // We need to print out the url so that dotnet watch can launch the dashboard
-            // technically this is too early
-            if (StringUtils.TryGetUriFromDelimitedString(dashboardOptions.Value.DashboardUrl, ";", out var firstDashboardUrl))
+            var browserToken = options.DashboardToken;
+
+            if (!StringUtils.TryGetUriFromDelimitedString(dashboardUrls, ";", out var firstDashboardUrl))
             {
-                settingsWriter.AddPortForward(
-                                firstDashboardUrl.ToString(),
-                                firstDashboardUrl.Port,
-                                firstDashboardUrl.Scheme,
-                                $"aspire-dashboard-{firstDashboardUrl.Scheme}",
-                                openBrowser: true);
+                return Task.CompletedTask;
             }
+
+            var dashboardUrl = codespaceUrlRewriter.RewriteUrl(firstDashboardUrl.ToString());
+
+            distributedApplicationLogger.LogInformation("Now listening on: {DashboardUrl}", dashboardUrl.TrimEnd('/'));
+
+            if (!string.IsNullOrEmpty(browserToken))
+            {
+                LoggingHelpers.WriteDashboardUrl(distributedApplicationLogger, dashboardUrl, browserToken, isContainer: false);
+            }
+
+            return Task.CompletedTask;
+        });
+
+        foreach (var d in dashboardUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries) ?? [])
+        {
+            var address = BindingAddress.Parse(d);
+
+            dashboardResource.Annotations.Add(new EndpointAnnotation(System.Net.Sockets.ProtocolType.Tcp, uriScheme: address.Scheme, port: address.Port, isProxied: false));
+        }
+
+        if (otlpGrpcEndpointUrl != null)
+        {
+            var address = BindingAddress.Parse(otlpGrpcEndpointUrl);
+            dashboardResource.Annotations.Add(new EndpointAnnotation(System.Net.Sockets.ProtocolType.Tcp, name: "otlp-grpc", uriScheme: address.Scheme, port: address.Port, isProxied: false, transport: "http2"));
+        }
+
+        if (otlpHttpEndpointUrl != null)
+        {
+            var address = BindingAddress.Parse(otlpHttpEndpointUrl);
+            dashboardResource.Annotations.Add(new EndpointAnnotation(System.Net.Sockets.ProtocolType.Tcp, name: "otlp-http", uriScheme: address.Scheme, port: address.Port, isProxied: false));
         }
 
         var showDashboardResources = configuration.GetBool(KnownConfigNames.ShowDashboardResources, KnownConfigNames.Legacy.ShowDashboardResources);
