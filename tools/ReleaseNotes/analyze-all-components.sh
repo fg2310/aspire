@@ -31,11 +31,38 @@ if ! command -v jq &> /dev/null; then
 else
     echo "📊 Processing components from configuration..."
     # Extract component paths from JSON config - flat array structure
-    COMPONENTS=($(jq -r '.analysis_priorities[]' "$CONFIG_FILE" 2>/dev/null || echo ""))
+    RAW_COMPONENTS=($(jq -r '.analysis_priorities[]' "$CONFIG_FILE" 2>/dev/null || echo ""))
     
-    # If config reading failed, use fallback
+    # Expand glob patterns to actual directories
+    COMPONENTS=()
+    for pattern in "${RAW_COMPONENTS[@]}"; do
+        if [[ "$pattern" == *"*"* ]]; then
+            # This is a glob pattern, expand it from the git root
+            echo "🔍 Expanding glob pattern: $pattern"
+            # Change to git root directory for proper glob expansion
+            GIT_ROOT=$(git rev-parse --show-toplevel)
+            cd "$GIT_ROOT"
+            for expanded_path in $pattern; do
+                if [ -d "$expanded_path" ]; then
+                    COMPONENTS+=("$expanded_path")
+                    echo "   ✅ Found: $expanded_path"
+                fi
+            done
+            # Return to tools directory
+            cd "$TOOLS_DIR"
+        else
+            # Regular path, add as-is if it exists
+            GIT_ROOT=$(git rev-parse --show-toplevel)
+            if [ -d "$GIT_ROOT/$pattern" ]; then
+                COMPONENTS+=("$pattern")
+                echo "   ✅ Found: $pattern"
+            fi
+        fi
+    done
+    
+    # If config reading failed or no components found, use fallback
     if [ ${#COMPONENTS[@]} -eq 0 ]; then
-        echo "⚠️  Could not read config, using fallback list"
+        echo "⚠️  Could not read config or no valid components found, using fallback list"
         COMPONENTS=(
             "src"
             "extension/"
@@ -80,24 +107,18 @@ analyze_component() {
     fi
 }
 
-# Analyze high priority components first
-echo "🎯 Analyzing high priority components..."
-for component in "${COMPONENTS[@]}"; do
-    if [[ "$component" == src/* ]]; then
-        component_name=$(basename "$component")
-        output_file="$ANALYSIS_DIR/$component_name.md"
-        analyze_component "$component" "$output_file"
-    fi
-done
+# Function to generate safe filename from component path
+generate_filename() {
+    local component="$1"
+    echo "$component" | sed 's|/|-|g' | sed 's|^src-||' | sed 's|-$||'
+}
 
-# Analyze other components
-echo "📋 Analyzing additional components..."
+# Analyze all components
+echo "🎯 Analyzing components..."
 for component in "${COMPONENTS[@]}"; do
-    if [[ "$component" != src/* ]]; then
-        component_name=$(echo "$component" | tr '/' '-' | sed 's/-$//')
-        output_file="$ANALYSIS_DIR/$component_name.md"
-        analyze_component "$component" "$output_file"
-    fi
+    component_name=$(generate_filename "$component")
+    output_file="$ANALYSIS_DIR/$component_name.md"
+    analyze_component "$component" "$output_file"
 done
 
 # Generate summary report
@@ -115,7 +136,7 @@ Branch comparison: $BASE_BRANCH -> $TARGET_BRANCH
 EOF
 
 for component in "${COMPONENTS[@]}"; do
-    component_name=$(basename "$component" | tr '/' '-' | sed 's/-$//')
+    component_name=$(generate_filename "$component")
     if [ -f "$ANALYSIS_DIR/$component_name.md" ]; then
         file_count=$(git diff --name-status $BASE_BRANCH..$TARGET_BRANCH -- "$component/" 2>/dev/null | wc -l | tr -d ' ')
         echo "- **$component** ($file_count files) - [Analysis]($component_name.md)" >> "$summary_file"

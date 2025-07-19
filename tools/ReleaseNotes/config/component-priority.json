@@ -1,8 +1,8 @@
 {
   "analysis_priorities": [
-    "src",
+    "src/*/",
     "extension/",
-    "eng/scripts"
+    "eng/scripts/*.*"
   ],
   "analysis_patterns": {
     "breaking_changes": {
@@ -17,9 +17,7 @@
         "test",
         "playground",
         "example",
-        "sample",
-        "Aspire.Cli",
-        "Aspire.Dashboard"
+        "sample"
       ]
     },
     "new_features": {
