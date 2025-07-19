@@ -182,7 +182,7 @@ extract_all_test_examples() {
     cd "$TOOLS_DIR"
 }
 
-# Extract API patterns summary for quick overview
+# Extract API patterns summary for quick overview and delegate complex analysis to AI
 extract_api_patterns_summary() {
     local output_file="$EXAMPLES_DIR/api-patterns-summary.md"
     
@@ -231,6 +231,20 @@ extract_api_patterns_summary() {
     else
         echo "No new integration keywords detected" >> "$output_file"
     fi
+    
+    echo "" >> "$output_file"
+    echo "## 🤖 AI Agent Analysis Required" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "> **Note**: The following tasks require AI agent analysis as they cannot be reliably automated:" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "1. **Feature Impact Assessment**: Determine which API changes represent major new features vs. minor enhancements" >> "$output_file"
+    echo "2. **Developer Benefit Analysis**: Transform technical changes into compelling user benefits" >> "$output_file"
+    echo "3. **Code Example Curation**: Select the most representative and educational examples from playground/test files" >> "$output_file"
+    echo "4. **Breaking Change Detection**: Identify actual breaking changes vs. internal refactoring" >> "$output_file"
+    echo "5. **Section Categorization**: Assign features to appropriate release notes sections (App Model, Dashboard, CLI, etc.)" >> "$output_file"
+    echo "6. **Documentation Quality**: Transform raw examples into polished, production-ready documentation" >> "$output_file"
+    echo "" >> "$output_file"
+    echo "**Process**: Use the extracted data as input for AI agent processing following \`agent-instructions.md\`" >> "$output_file"
     
     # Return to original directory
     cd "$TOOLS_DIR"
