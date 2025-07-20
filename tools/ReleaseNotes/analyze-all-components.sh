@@ -15,6 +15,10 @@ ANALYSIS_DIR="$TOOLS_DIR/analysis-output"
 echo "🔍 Starting automated component analysis"
 echo "📋 Using config: $CONFIG_FILE"
 echo "📊 Output directory: $ANALYSIS_DIR"
+echo "⏱️  This may take several minutes for large repositories..."
+
+# Start total timing
+SCRIPT_START_TIME=$(date +%s)
 
 # Ensure analysis directory exists
 mkdir -p "$ANALYSIS_DIR"
@@ -73,6 +77,7 @@ fi
 
 # Function to analyze a single component
 analyze_component() {
+    local component_start=$(date +%s)
     local component_path="$1"
     local output_file="$2"
     
@@ -105,6 +110,9 @@ analyze_component() {
         echo "## Notable Changes" >> "$output_file"
         git diff --name-status $BASE_BRANCH..$TARGET_BRANCH -- "$component_path/" | grep "^A" | head -10 >> "$output_file" 2>/dev/null || echo "No new files added" >> "$output_file"
     fi
+    
+    local component_end=$(date +%s)
+    echo "    ⏱️  Completed in $((component_end - component_start))s"
 }
 
 # Function to generate safe filename from component path
@@ -115,14 +123,26 @@ generate_filename() {
 
 # Analyze all components
 echo "🎯 Analyzing components..."
+ANALYSIS_START=$(date +%s)
+
+component_count=0
+total_components=${#COMPONENTS[@]}
+echo "📊 Processing $total_components components..."
+
 for component in "${COMPONENTS[@]}"; do
+    ((component_count++))
+    echo "[$component_count/$total_components] Processing: $component"
     component_name=$(generate_filename "$component")
     output_file="$ANALYSIS_DIR/$component_name.md"
     analyze_component "$component" "$output_file"
 done
 
+ANALYSIS_END=$(date +%s)
+echo "✅ Component analysis completed in $((ANALYSIS_END - ANALYSIS_START))s"
+
 # Generate summary report
 echo "📊 Generating summary report..."
+SUMMARY_START=$(date +%s)
 summary_file="$ANALYSIS_DIR/analysis-summary.md"
 
 cat > "$summary_file" << EOF
@@ -151,8 +171,21 @@ EOF
 
 ls -la "$ANALYSIS_DIR"/*.md | awk '{print "- " $9 " (" $5 " bytes)"}' >> "$summary_file"
 
+SUMMARY_END=$(date +%s)
+echo "✅ Summary generation completed in $((SUMMARY_END - SUMMARY_START))s"
+
+# Calculate total time
+SCRIPT_END_TIME=$(date +%s)
+TOTAL_TIME=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
+
 echo ""
 echo "✅ Component analysis complete!"
+echo "⏱️  Total execution time: ${TOTAL_TIME}s"
+echo ""
+echo "📊 Timing Summary:"
+echo "   Component Analysis: $((ANALYSIS_END - ANALYSIS_START))s"
+echo "   Summary Generation: $((SUMMARY_END - SUMMARY_START))s"
+echo ""
 echo "📄 Summary: $summary_file"
 echo "📁 Detailed analysis files in: $ANALYSIS_DIR/"
 echo ""

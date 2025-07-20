@@ -26,7 +26,11 @@ cd "$REPO_ROOT"
 echo "📁 ANALYZING: $FOLDER"
 echo "🔄 Comparing: $BASE_BRANCH → $TARGET_BRANCH"
 echo "📂 Working from: $(pwd)"
+echo "⏱️  Starting detailed analysis..."
 echo "========================================"
+
+# Start timing
+ANALYSIS_START_TIME=$(date +%s)
 
 echo "📊 Change Summary:"
 STATS=$(git diff --stat $BASE_BRANCH..$TARGET_BRANCH -- $FOLDER/)
@@ -99,6 +103,14 @@ git log --grep="fix\|bug" --oneline --no-merges $BASE_BRANCH..$TARGET_BRANCH -- 
 echo "Breaking changes:"
 git log --grep="breaking\|BREAKING" --oneline --no-merges $BASE_BRANCH..$TARGET_BRANCH -- $FOLDER/ | head -5
 
+# Calculate and display timing
+ANALYSIS_END_TIME=$(date +%s)
+TOTAL_TIME=$((ANALYSIS_END_TIME - ANALYSIS_START_TIME))
+
+echo "========================================"
+echo "⏱️  Analysis completed in ${TOTAL_TIME}s"
+echo "📁 Analysis for: $FOLDER"
+echo "🔄 Branch comparison: $BASE_BRANCH → $TARGET_BRANCH"
 echo "========================================"
 echo "✅ Analysis complete for $FOLDER"
 echo "📊 Comparison: $BASE_BRANCH → $TARGET_BRANCH"

@@ -13,7 +13,11 @@ VERSION=$(echo $TARGET_BRANCH | grep -o '[0-9]\+\.[0-9]\+' || echo "unknown")
 echo "🚀 Starting automated release notes generation"
 echo "📊 Analyzing changes: $BASE_BRANCH -> $TARGET_BRANCH"
 echo "📝 Target version: $VERSION"
+echo "⏱️  This process may take 5-10 minutes depending on repository size..."
 echo ""
+
+# Start total timing
+SCRIPT_START_TIME=$(date +%s)
 
 # Setup workspace
 TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,14 +28,18 @@ mkdir -p "$ANALYSIS_DIR"
 
 # Step 1: Initialize and validate
 echo "🔍 Step 1: Initializing analysis workspace..."
+STEP1_START=$(date +%s)
 if [ -f "$TOOLS_DIR/init-release-analysis.sh" ]; then
     "$TOOLS_DIR/init-release-analysis.sh" "$BASE_BRANCH" "$TARGET_BRANCH"
 else
     echo "⚠️  init-release-analysis.sh not found, skipping validation"
 fi
+STEP1_END=$(date +%s)
+echo "✅ Step 1 completed in $((STEP1_END - STEP1_START))s"
 
 # Step 2: Analyze all components
 echo "📁 Step 2: Analyzing all components..."
+STEP2_START=$(date +%s)
 if [ -f "$TOOLS_DIR/analyze-all-components.sh" ]; then
     "$TOOLS_DIR/analyze-all-components.sh" "$BASE_BRANCH" "$TARGET_BRANCH"
 else
@@ -45,9 +53,12 @@ else
         done
     fi
 fi
+STEP2_END=$(date +%s)
+echo "✅ Step 2 completed in $((STEP2_END - STEP2_START))s"
 
 # Step 3: Extract API usage examples
 echo "🔧 Step 3: Extracting API usage examples..."
+STEP3_START=$(date +%s)
 if [ -f "$TOOLS_DIR/extract-api-examples.sh" ]; then
     "$TOOLS_DIR/extract-api-examples.sh" "$BASE_BRANCH" "$TARGET_BRANCH"
 else
@@ -56,9 +67,12 @@ else
     git log --oneline --no-merges $BASE_BRANCH..$TARGET_BRANCH -- playground/ > "$ANALYSIS_DIR/playground-changes.txt"
     git log --oneline --no-merges $BASE_BRANCH..$TARGET_BRANCH -- tests/ > "$ANALYSIS_DIR/test-changes.txt"
 fi
+STEP3_END=$(date +%s)
+echo "✅ Step 3 completed in $((STEP3_END - STEP3_START))s"
 
 # Step 4: Generate structured release notes
 echo "📝 Step 4: Generating structured release notes..."
+STEP4_START=$(date +%s)
 if [ -f "$TOOLS_DIR/generate-structured-notes.sh" ]; then
     "$TOOLS_DIR/generate-structured-notes.sh" "$VERSION"
 else
@@ -83,9 +97,12 @@ EOF
         fi
     done
 fi
+STEP4_END=$(date +%s)
+echo "✅ Step 4 completed in $((STEP4_END - STEP4_START))s"
 
 # Step 5: Finalize and format
 echo "✨ Step 5: Finalizing release notes..."
+STEP5_START=$(date +%s)
 if [ -f "$TOOLS_DIR/finalize-release-notes.sh" ]; then
     "$TOOLS_DIR/finalize-release-notes.sh" "$OUTPUT_FILE"
 else
@@ -98,9 +115,24 @@ else
     cat "$OUTPUT_FILE" >> "$OUTPUT_FILE.tmp"
     mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
 fi
+STEP5_END=$(date +%s)
+echo "✅ Step 5 completed in $((STEP5_END - STEP5_START))s"
+
+# Calculate total time
+SCRIPT_END_TIME=$(date +%s)
+TOTAL_TIME=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
 
 echo ""
 echo "✅ Release notes generation complete!"
+echo "⏱️  Total execution time: ${TOTAL_TIME}s"
+echo ""
+echo "📊 Step Timing Summary:"
+echo "   Step 1 (Initialize): $((STEP1_END - STEP1_START))s"
+echo "   Step 2 (Components): $((STEP2_END - STEP2_START))s" 
+echo "   Step 3 (API Examples): $((STEP3_END - STEP3_START))s"
+echo "   Step 4 (Generate Notes): $((STEP4_END - STEP4_START))s"
+echo "   Step 5 (Finalize): $((STEP5_END - STEP5_START))s"
+echo ""
 echo "📄 Output file: $OUTPUT_FILE"
 echo "📊 Analysis data: $ANALYSIS_DIR/"
 echo ""
